@@ -8,13 +8,7 @@ import {
 import { calculate, deriveStaffing } from "./calc/engine";
 import type { CalcResults, FormInputs } from "./calc/engine";
 import { exportPDF } from "./utils/exportPDF";
-
-const OFW_LOGO = (
-  <svg width="44" height="44" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect width="44" height="44" rx="6" fill="#5a1a1a"/>
-    <text x="50%" y="56%" dominantBaseline="middle" textAnchor="middle" fill="white" fontSize="13" fontWeight="700" fontFamily="system-ui, sans-serif">OFW</text>
-  </svg>
-);
+import ofwLogo from "./assets/ofw_logo.png";
 
 function fmt(n: number, decimals = 2) {
   return n.toLocaleString("en-US", {
@@ -203,7 +197,7 @@ export default function App() {
     <div className="min-h-screen" style={{ backgroundColor: "#fce8e8" }}>
       {/* Navbar */}
       <nav className="flex items-center justify-between px-8 py-4 sticky top-0 z-50" style={{ backgroundColor: "#1a0a0a" }}>
-        <div>{OFW_LOGO}</div>
+        <div><img src={ofwLogo} alt="One Fair Wage" className="h-10 w-auto" /></div>
         <div className="flex items-center gap-6">
           <a href="#" className="text-white text-sm hover:text-pink-300 transition-colors">Home</a>
           <button className="border border-white text-white text-sm px-5 py-1.5 rounded-full hover:bg-white hover:text-[#1a0a0a] transition-all">
