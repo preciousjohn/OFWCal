@@ -1,28 +1,32 @@
 export interface RestaurantProfile {
   label: string;
   // Cost structure
-  cogsPercent: number;       // Cost of Goods Sold as % of revenue
-  operatingExpensePercent: number; // Other opex as % of revenue (rent, utilities, etc.)
+  cogsPercent: number;
+  operatingExpensePercent: number;
   // Tipping
-  tipRatePercent: number;    // Average tip % on food bill
-  // Staffing ratios (FOH : BOH, management separate)
-  fohRatio: number;          // e.g. 0.5 means half of non-mgmt staff is FOH
-  bohRatio: number;          // e.g. 0.5 means half of non-mgmt staff is BOH
-  managementPerTenStaff: number; // 1 manager per N total staff
+  tipRatePercent: number;
+  // Staffing ratios (used for management derivation)
+  fohRatio: number;
+  bohRatio: number;
+  managementPerTenStaff: number;
+  // Default headcounts (pre-fill)
+  defaultWaitstaff: number;
+  defaultCooks: number;
+  defaultDishwashers: number;
   // Hours
   avgHoursPerWeekFOH: number;
   avgHoursPerWeekBOH: number;
   avgHoursPerWeekMgmt: number;
-  overtimeHoursPerWeekFOH: number; // OT hours per worker per week
+  overtimeHoursPerWeekFOH: number;
   overtimeHoursPerWeekBOH: number;
   // Pay
   managementAnnualSalary: number;
   // Turnover & onboarding
-  annualTurnoverRate: number;  // fraction, e.g. 0.75
+  annualTurnoverRate: number;
   onboardingCostPerEmployee: number;
   // Tips
-  tipPoolFOHShare: number;    // fraction of tip pool that goes to FOH
-  tipPoolBOHShare: number;    // fraction that goes to BOH
+  tipPoolFOHShare: number;
+  tipPoolBOHShare: number;
   // Service
   serviceHoursPerMonth: number;
 }
@@ -44,6 +48,9 @@ export const RESTAURANT_PROFILES: Record<RestaurantType, RestaurantProfile> = {
     fohRatio: 0.6,
     bohRatio: 0.4,
     managementPerTenStaff: 1,
+    defaultWaitstaff: 6,
+    defaultCooks: 4,
+    defaultDishwashers: 1,
     avgHoursPerWeekFOH: 25,
     avgHoursPerWeekBOH: 30,
     avgHoursPerWeekMgmt: 45,
@@ -64,6 +71,9 @@ export const RESTAURANT_PROFILES: Record<RestaurantType, RestaurantProfile> = {
     fohRatio: 0.55,
     bohRatio: 0.45,
     managementPerTenStaff: 1,
+    defaultWaitstaff: 5,
+    defaultCooks: 4,
+    defaultDishwashers: 1,
     avgHoursPerWeekFOH: 28,
     avgHoursPerWeekBOH: 32,
     avgHoursPerWeekMgmt: 45,
@@ -84,6 +94,9 @@ export const RESTAURANT_PROFILES: Record<RestaurantType, RestaurantProfile> = {
     fohRatio: 0.55,
     bohRatio: 0.45,
     managementPerTenStaff: 1,
+    defaultWaitstaff: 5,
+    defaultCooks: 4,
+    defaultDishwashers: 2,
     avgHoursPerWeekFOH: 30,
     avgHoursPerWeekBOH: 35,
     avgHoursPerWeekMgmt: 48,
@@ -104,6 +117,9 @@ export const RESTAURANT_PROFILES: Record<RestaurantType, RestaurantProfile> = {
     fohRatio: 0.6,
     bohRatio: 0.4,
     managementPerTenStaff: 1.5,
+    defaultWaitstaff: 6,
+    defaultCooks: 5,
+    defaultDishwashers: 2,
     avgHoursPerWeekFOH: 32,
     avgHoursPerWeekBOH: 40,
     avgHoursPerWeekMgmt: 50,
@@ -124,6 +140,9 @@ export const RESTAURANT_PROFILES: Record<RestaurantType, RestaurantProfile> = {
     fohRatio: 0.6,
     bohRatio: 0.4,
     managementPerTenStaff: 1,
+    defaultWaitstaff: 4,
+    defaultCooks: 3,
+    defaultDishwashers: 1,
     avgHoursPerWeekFOH: 28,
     avgHoursPerWeekBOH: 30,
     avgHoursPerWeekMgmt: 44,
@@ -144,6 +163,9 @@ export const RESTAURANT_PROFILES: Record<RestaurantType, RestaurantProfile> = {
     fohRatio: 0.7,
     bohRatio: 0.3,
     managementPerTenStaff: 1,
+    defaultWaitstaff: 7,
+    defaultCooks: 2,
+    defaultDishwashers: 1,
     avgHoursPerWeekFOH: 25,
     avgHoursPerWeekBOH: 30,
     avgHoursPerWeekMgmt: 50,

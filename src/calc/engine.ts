@@ -1,43 +1,42 @@
 import type { RestaurantProfile } from "../data/restaurantProfiles";
 
+export interface RoleInput {
+  count: number;
+  wage: number; // current hourly pay
+}
+
 export interface FormInputs {
   state: string;
   restaurantType: string;
   annualRevenue: number;
-  totalStaff: number;
-  menuPrice: number;             // avg menu item price
-  kitchenStaffEarnings: number;  // current hourly wage for BOH
-  tippedWorkerEarnings: number;  // current hourly wage for FOH (base, excl tips)
+  menuPrice: number;
+  waitstaff: RoleInput;   // FOH
+  cooks: RoleInput;       // BOH
+  dishwashers: RoleInput; // BOH
 }
 
 export interface DerivedStaffing {
-  fohCount: number;
-  bohCount: number;
+  waitstaffCount: number;
+  cooksCount: number;
+  dishwashersCount: number;
+  fohCount: number;        // = waitstaffCount
+  bohCount: number;        // = cooks + dishwashers
   managementCount: number;
   totalStaff: number;
-}
-
-export interface AutoFilledValues {
-  minimumWage: number;
-  tippedMinWage: number;
-  targetOFWWage: number;
-  staffing: DerivedStaffing;
 }
 
 export interface ScenarioResult {
   menuIncreasePercent: number;
   newMenuPrice: number;
-  customerPaysWithNewSystem: number;  // no tip at new price
-  customerPaidBefore: number;         // old price + tip
-  customerDelta: number;              // diff (positive = more, negative = less)
+  customerPaysWithNewSystem: number;
+  customerPaidBefore: number;
+  customerDelta: number;
   monthlyProfit: number;
 }
 
 export interface CalcResults {
-  toPayAllWorkersHourly: number;      // target OFW wage
-  requiredMenuIncreasePercent: number; // break-even
-  comfortableMenuIncreasePercent: number; // break-even + 5% margin
-  matchCurrentMenuIncreasePercent: number; // matches current profit
+  toPayAllWorkersHourly: number;
+  requiredMenuIncreasePercent: number;
   currentMonthlyProfit: number;
   breakEven: ScenarioResult;
   comfortable: ScenarioResult;
@@ -48,72 +47,65 @@ export interface CalcResults {
   targetOFWWage: number;
 }
 
-const PAYROLL_TAX_RATE = 0.0765; // FICA employer share
+const PAYROLL_TAX_RATE = 0.0765;
 const WEEKS_PER_YEAR = 52;
 const MONTHS_PER_YEAR = 12;
 const OT_MULTIPLIER = 1.5;
 
 export function deriveStaffing(
-  totalStaff: number,
+  waitstaffCount: number,
+  cooksCount: number,
+  dishwashersCount: number,
   profile: RestaurantProfile
 ): DerivedStaffing {
-  const managementCount = Math.max(
-    1,
-    Math.round((totalStaff * profile.managementPerTenStaff) / 10)
-  );
-  const nonMgmt = totalStaff - managementCount;
-  const fohCount = Math.max(1, Math.round(nonMgmt * profile.fohRatio));
-  const bohCount = Math.max(1, nonMgmt - fohCount);
-  return { fohCount, bohCount, managementCount, totalStaff };
+  const nonMgmt = waitstaffCount + cooksCount + dishwashersCount;
+  const managementCount = Math.max(1, Math.round((nonMgmt * profile.managementPerTenStaff) / 10));
+  return {
+    waitstaffCount,
+    cooksCount,
+    dishwashersCount,
+    fohCount: waitstaffCount,
+    bohCount: cooksCount + dishwashersCount,
+    managementCount,
+    totalStaff: nonMgmt + managementCount,
+  };
 }
 
 function annualLaborCost(
   staffing: DerivedStaffing,
   profile: RestaurantProfile,
-  fohWage: number,   // effective total wage per hour for FOH (base + estimated tip)
-  bohWage: number,   // hourly wage BOH
-  targetWage: number // target OFW hourly wage
+  waitstaffWage: number,
+  cooksWage: number,
+  dishwashersWage: number,
+  targetWage: number
 ): { current: number; atTarget: number } {
-  // Current labor cost
-  const fohRegHours =
-    staffing.fohCount *
-    (profile.avgHoursPerWeekFOH - profile.overtimeHoursPerWeekFOH) *
-    WEEKS_PER_YEAR;
-  const fohOTHours =
-    staffing.fohCount * profile.overtimeHoursPerWeekFOH * WEEKS_PER_YEAR;
+  const fohRegHours = staffing.waitstaffCount * (profile.avgHoursPerWeekFOH - profile.overtimeHoursPerWeekFOH) * WEEKS_PER_YEAR;
+  const fohOTHours  = staffing.waitstaffCount * profile.overtimeHoursPerWeekFOH * WEEKS_PER_YEAR;
 
-  const bohRegHours =
-    staffing.bohCount *
-    (profile.avgHoursPerWeekBOH - profile.overtimeHoursPerWeekBOH) *
-    WEEKS_PER_YEAR;
-  const bohOTHours =
-    staffing.bohCount * profile.overtimeHoursPerWeekBOH * WEEKS_PER_YEAR;
+  const cooksRegHours  = staffing.cooksCount * (profile.avgHoursPerWeekBOH - profile.overtimeHoursPerWeekBOH) * WEEKS_PER_YEAR;
+  const cooksOTHours   = staffing.cooksCount * profile.overtimeHoursPerWeekBOH * WEEKS_PER_YEAR;
+
+  const dishRegHours   = staffing.dishwashersCount * (profile.avgHoursPerWeekBOH - profile.overtimeHoursPerWeekBOH) * WEEKS_PER_YEAR;
+  const dishOTHours    = staffing.dishwashersCount * profile.overtimeHoursPerWeekBOH * WEEKS_PER_YEAR;
 
   const mgmtAnnual = staffing.managementCount * profile.managementAnnualSalary;
+  const turnoverCost = staffing.totalStaff * profile.annualTurnoverRate * profile.onboardingCostPerEmployee;
 
-  const currentFOHPay =
-    fohRegHours * fohWage + fohOTHours * fohWage * OT_MULTIPLIER;
-  const currentBOHPay =
-    bohRegHours * bohWage + bohOTHours * bohWage * OT_MULTIPLIER;
+  // Current
+  const curFOH  = fohRegHours * waitstaffWage   + fohOTHours  * waitstaffWage   * OT_MULTIPLIER;
+  const curCook = cooksRegHours * cooksWage      + cooksOTHours * cooksWage      * OT_MULTIPLIER;
+  const curDish = dishRegHours  * dishwashersWage + dishOTHours * dishwashersWage * OT_MULTIPLIER;
+  const curBase = curFOH + curCook + curDish + mgmtAnnual;
+  const current = curBase + (curFOH + curCook + curDish) * PAYROLL_TAX_RATE + turnoverCost;
 
-  const currentBase = currentFOHPay + currentBOHPay + mgmtAnnual;
-  const currentTaxes = (currentFOHPay + currentBOHPay) * PAYROLL_TAX_RATE;
-  const turnoverCost =
-    staffing.totalStaff * profile.annualTurnoverRate * profile.onboardingCostPerEmployee;
+  // At target (everyone gets targetWage, no tips)
+  const tgtFOH  = fohRegHours  * targetWage + fohOTHours  * targetWage * OT_MULTIPLIER;
+  const tgtCook = cooksRegHours * targetWage + cooksOTHours * targetWage * OT_MULTIPLIER;
+  const tgtDish = dishRegHours  * targetWage + dishOTHours  * targetWage * OT_MULTIPLIER;
+  const tgtBase = tgtFOH + tgtCook + tgtDish + mgmtAnnual;
+  const atTarget = tgtBase + (tgtFOH + tgtCook + tgtDish) * PAYROLL_TAX_RATE + turnoverCost;
 
-  const currentTotal = currentBase + currentTaxes + turnoverCost;
-
-  // At-target labor cost (everyone gets target wage, no tips)
-  const fohTargetPay =
-    fohRegHours * targetWage + fohOTHours * targetWage * OT_MULTIPLIER;
-  const bohTargetPay =
-    bohRegHours * targetWage + bohOTHours * targetWage * OT_MULTIPLIER;
-
-  const targetBase = fohTargetPay + bohTargetPay + mgmtAnnual;
-  const targetTaxes = (fohTargetPay + bohTargetPay) * PAYROLL_TAX_RATE;
-  const targetTotal = targetBase + targetTaxes + turnoverCost;
-
-  return { current: currentTotal, atTarget: targetTotal };
+  return { current, atTarget };
 }
 
 function buildScenario(
@@ -128,12 +120,11 @@ function buildScenario(
   const newMenuPrice = menuPrice * multiplier;
   const newRevenue = annualRevenue * multiplier;
   const cogs = newRevenue * profile.cogsPercent;
-  const opex = annualRevenue * profile.operatingExpensePercent; // opex doesn't scale with menu price
+  const opex = annualRevenue * profile.operatingExpensePercent;
   const monthlyProfit = (newRevenue - cogs - atTargetLaborCost - opex) / MONTHS_PER_YEAR;
 
-  // Customer comparison: old price + tip vs new price no tip
   const customerPaidBefore = menuPrice * (1 + tipRatePercent);
-  const customerPaysWithNewSystem = newMenuPrice; // no tip in new model
+  const customerPaysWithNewSystem = newMenuPrice;
 
   return {
     menuIncreasePercent,
@@ -152,89 +143,48 @@ export function calculate(
   tippedMinWage: number,
   targetOFWWage: number
 ): CalcResults {
-  const staffing = deriveStaffing(inputs.totalStaff, profile);
-
-  const fohCurrentWage = inputs.tippedWorkerEarnings;
-  const bohCurrentWage = inputs.kitchenStaffEarnings;
+  const staffing = deriveStaffing(
+    inputs.waitstaff.count,
+    inputs.cooks.count,
+    inputs.dishwashers.count,
+    profile
+  );
 
   const labor = annualLaborCost(
     staffing,
     profile,
-    fohCurrentWage,
-    bohCurrentWage,
+    inputs.waitstaff.wage,
+    inputs.cooks.wage,
+    inputs.dishwashers.wage,
     targetOFWWage
   );
 
-  // Current financials
   const currentRevenue = inputs.annualRevenue;
   const currentCOGS = currentRevenue * profile.cogsPercent;
   const currentOpex = currentRevenue * profile.operatingExpensePercent;
-  const currentMonthlyProfit =
-    (currentRevenue - currentCOGS - labor.current - currentOpex) / MONTHS_PER_YEAR;
-
-  // Revenue needed to cover labor increase at break-even
-  // newRevenue * (1 - COGS%) - opex - atTargetLabor = currentProfit * 12
-  // newRevenue * grossMarginRate = currentAnnualProfit + opex + atTargetLabor
-  const grossMarginRate = 1 - profile.cogsPercent;
+  const currentMonthlyProfit = (currentRevenue - currentCOGS - labor.current - currentOpex) / MONTHS_PER_YEAR;
   const currentAnnualProfit = currentMonthlyProfit * MONTHS_PER_YEAR;
 
-  // Break-even: 0 profit (just cover costs)
-  // newRevenue * grossMarginRate = opex + atTargetLabor
-  const breakEvenRevenue =
-    (currentOpex + labor.atTarget) / grossMarginRate;
-  const breakEvenIncreasePercent = Math.max(
-    0,
-    ((breakEvenRevenue - currentRevenue) / currentRevenue) * 100
-  );
+  const grossMarginRate = 1 - profile.cogsPercent;
 
-  // Comfortable: 5% profit margin on new revenue
-  // newRevenue * (grossMarginRate - 0.05) = opex + atTargetLabor
-  const comfortableRevenue =
-    (currentOpex + labor.atTarget) / (grossMarginRate - 0.05);
-  const comfortableIncreasePercent = Math.max(
-    0,
-    ((comfortableRevenue - currentRevenue) / currentRevenue) * 100
-  );
+  const breakEvenRevenue = (currentOpex + labor.atTarget) / grossMarginRate;
+  const breakEvenPct = Math.max(0, ((breakEvenRevenue - currentRevenue) / currentRevenue) * 100);
 
-  // Match current: maintain same annual profit
-  // newRevenue * grossMarginRate - opex - atTargetLabor = currentAnnualProfit
-  const matchRevenue =
-    (currentOpex + labor.atTarget + currentAnnualProfit) / grossMarginRate;
-  const matchIncreasePercent = Math.max(
-    0,
-    ((matchRevenue - currentRevenue) / currentRevenue) * 100
-  );
+  const comfortableRevenue = (currentOpex + labor.atTarget) / (grossMarginRate - 0.05);
+  const comfortablePct = Math.max(0, ((comfortableRevenue - currentRevenue) / currentRevenue) * 100);
+
+  const matchRevenue = (currentOpex + labor.atTarget + currentAnnualProfit) / grossMarginRate;
+  const matchPct = Math.max(0, ((matchRevenue - currentRevenue) / currentRevenue) * 100);
+
+  const args = [inputs.menuPrice, profile.tipRatePercent, inputs.annualRevenue, profile, labor.atTarget] as const;
 
   return {
     toPayAllWorkersHourly: targetOFWWage,
-    requiredMenuIncreasePercent: breakEvenIncreasePercent,
-    comfortableMenuIncreasePercent: comfortableIncreasePercent,
-    matchCurrentMenuIncreasePercent: matchIncreasePercent,
+    requiredMenuIncreasePercent: breakEvenPct,
     currentMonthlyProfit,
-    breakEven: buildScenario(
-      breakEvenIncreasePercent,
-      inputs.menuPrice,
-      profile.tipRatePercent,
-      inputs.annualRevenue,
-      profile,
-      labor.atTarget
-    ),
-    comfortable: buildScenario(
-      comfortableIncreasePercent,
-      inputs.menuPrice,
-      profile.tipRatePercent,
-      inputs.annualRevenue,
-      profile,
-      labor.atTarget
-    ),
-    matchCurrent: buildScenario(
-      matchIncreasePercent,
-      inputs.menuPrice,
-      profile.tipRatePercent,
-      inputs.annualRevenue,
-      profile,
-      labor.atTarget
-    ),
+    breakEven:    buildScenario(breakEvenPct,  ...args),
+    comfortable:  buildScenario(comfortablePct, ...args),
+    matchCurrent: buildScenario(matchPct,       ...args),
     staffing,
     minimumWage,
     tippedMinWage,

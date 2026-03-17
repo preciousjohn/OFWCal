@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { STATES_LIST, getStateData } from "./data/stateTiers";
 import {
   RESTAURANT_PROFILES,
@@ -6,9 +6,9 @@ import {
   type RestaurantType,
 } from "./data/restaurantProfiles";
 import { calculate, deriveStaffing } from "./calc/engine";
-import type { CalcResults, FormInputs } from "./calc/engine";
+import type { CalcResults } from "./calc/engine";
 import { exportPDF } from "./utils/exportPDF";
-import ofwLogo from "./assets/ofw_logo.png";
+import ofwLogo from "./assets/ofw_logo.svg";
 
 function fmt(n: number, decimals = 2) {
   return n.toLocaleString("en-US", {
@@ -16,50 +16,31 @@ function fmt(n: number, decimals = 2) {
     maximumFractionDigits: decimals,
   });
 }
-
-function fmtPct(n: number) {
-  return n.toFixed(1) + "%";
-}
-
+function fmtPct(n: number) { return n.toFixed(1) + "%"; }
 function fmtDollar(n: number) {
-  const abs = Math.abs(n);
-  const sign = n < 0 ? "-" : "+";
-  return sign + "$" + fmt(abs);
+  return (n < 0 ? "-" : "+") + "$" + fmt(Math.abs(n));
 }
 
-interface InputFieldProps {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  suffix?: string;
-  type?: string;
-  min?: string;
-}
+// ── Shared input components ──────────────────────────────────────────────────
 
 function InputField({
-  label,
-  value,
-  onChange,
-  placeholder = "0.00",
-  suffix,
-  type = "number",
-  min = "0",
-}: InputFieldProps) {
+  label, value, onChange, placeholder = "0.00", suffix, min = "0",
+}: {
+  label?: string; value: string; onChange: (v: string) => void;
+  placeholder?: string; suffix?: string; min?: string;
+}) {
   return (
     <div className="flex flex-col gap-1.5">
-      <label className="text-sm font-medium text-[#3d1212]">{label}</label>
+      {label && <label className="text-sm font-medium text-[#3d1212]">{label}</label>}
       <div className="relative flex items-center">
         <input
-          type={type}
-          min={min}
-          value={value}
+          type="number" min={min} value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           className={`w-full border border-[#e0c8c8] rounded-lg py-2.5 pl-3 text-sm bg-white text-[#3d1212] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#b85c5c] focus:border-transparent ${suffix ? "pr-16" : "pr-3"}`}
         />
         {suffix && (
-          <span className="absolute right-3 text-sm text-gray-500 flex items-center gap-1 select-none pointer-events-none">
+          <span className="absolute right-3 text-sm text-gray-500 pointer-events-none select-none flex items-center gap-1">
             {suffix === "USD" && <span>🇺🇸</span>}
             <span>{suffix}</span>
           </span>
@@ -69,46 +50,54 @@ function InputField({
   );
 }
 
-interface SelectFieldProps {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  options: { value: string; label: string }[];
-  placeholder?: string;
-  fullWidth?: boolean;
+function RevenueField({
+  label, value, onChange,
+}: {
+  label: string; value: string; onChange: (v: string) => void;
+}) {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value.replace(/[^0-9]/g, "");
+    if (!raw) { onChange(""); return; }
+    const formatted = Number(raw).toLocaleString("en-US");
+    onChange(formatted);
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label className="text-sm font-medium text-[#3d1212]">{label}</label>
+      <div className="relative flex items-center">
+        <input
+          type="text" inputMode="numeric" value={value}
+          onChange={handleChange}
+          placeholder="0"
+          className="w-full border border-[#e0c8c8] rounded-lg py-2.5 pl-3 pr-16 text-sm bg-white text-[#3d1212] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#b85c5c] focus:border-transparent"
+        />
+        <span className="absolute right-3 text-sm text-gray-500 pointer-events-none select-none flex items-center gap-1">
+          <span>🇺🇸</span><span>USD</span>
+        </span>
+      </div>
+    </div>
+  );
 }
 
 function SelectField({
-  label,
-  value,
-  onChange,
-  options,
-  placeholder = "Select",
-  fullWidth = false,
-}: SelectFieldProps) {
+  label, value, onChange, options, placeholder = "Select", fullWidth = false,
+}: {
+  label: string; value: string; onChange: (v: string) => void;
+  options: { value: string; label: string }[]; placeholder?: string; fullWidth?: boolean;
+}) {
   return (
     <div className={`flex flex-col gap-1.5 ${fullWidth ? "w-full" : ""}`}>
       <label className="text-sm font-medium text-[#3d1212]">{label}</label>
       <div className="relative">
         <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
+          value={value} onChange={(e) => onChange(e.target.value)}
           className="w-full border border-[#e0c8c8] rounded-lg py-2.5 pl-3 pr-9 text-sm bg-white text-[#3d1212] focus:outline-none focus:ring-2 focus:ring-[#b85c5c] focus:border-transparent appearance-none cursor-pointer"
         >
           <option value="">{placeholder}</option>
-          {options.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
+          {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
-        <svg
-          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"
-          width="12"
-          height="8"
-          viewBox="0 0 12 8"
-          fill="none"
-        >
+        <svg className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" width="12" height="8" viewBox="0 0 12 8" fill="none">
           <path d="M1 1l5 5 5-5" stroke="#3d1212" strokeWidth="1.5" strokeLinecap="round"/>
         </svg>
       </div>
@@ -116,31 +105,69 @@ function SelectField({
   );
 }
 
-const AUTOFILL_BG = "#c97474";
-
 function AutoFillBadge({ label, value }: { label: string; value: string | number }) {
   return (
-    <div
-      className="rounded-xl p-3 flex flex-col gap-0.5"
-      style={{ backgroundColor: AUTOFILL_BG + "55" }}
-    >
+    <div className="rounded-xl p-3 flex flex-col gap-0.5" style={{ backgroundColor: "#c9747455" }}>
       <span className="text-xl font-bold text-[#3d1212] leading-tight">{value}</span>
       <span className="text-xs text-[#5a2a2a] leading-tight">{label}</span>
     </div>
   );
 }
 
+// ── Staffing row ─────────────────────────────────────────────────────────────
+
+interface RoleState { count: string; wage: string; }
+
+function StaffingRow({
+  role, sub, value, onChange,
+}: {
+  role: string; sub: string; value: RoleState; onChange: (v: RoleState) => void;
+}) {
+  return (
+    <div className="grid grid-cols-[1fr_auto_auto] items-center gap-3">
+      {/* Role label */}
+      <div className="flex flex-col">
+        <span className="text-sm font-medium text-[#3d1212]">{role}</span>
+        <span className="text-xs text-[#7a4a4a]">{sub}</span>
+      </div>
+      {/* Count */}
+      <div className="w-24">
+        <input
+          type="number" min="0" value={value.count}
+          onChange={(e) => onChange({ ...value, count: e.target.value })}
+          placeholder="0"
+          className="w-full border border-[#e0c8c8] rounded-lg py-2.5 px-3 text-sm bg-white text-[#3d1212] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#b85c5c] focus:border-transparent"
+        />
+      </div>
+      {/* Wage */}
+      <div className="w-36">
+        <div className="relative flex items-center">
+          <span className="absolute left-3 text-sm text-gray-500 pointer-events-none">$</span>
+          <input
+            type="number" min="0" step="0.01" value={value.wage}
+            onChange={(e) => onChange({ ...value, wage: e.target.value })}
+            placeholder="0.00"
+            className="w-full border border-[#e0c8c8] rounded-lg py-2.5 pl-7 pr-10 text-sm bg-white text-[#3d1212] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#b85c5c] focus:border-transparent"
+          />
+          <span className="absolute right-3 text-xs text-gray-500 pointer-events-none">/hr</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
   const [state, setState] = useState("");
   const [restaurantType, setRestaurantType] = useState("");
   const [annualRevenue, setAnnualRevenue] = useState("");
-  const [totalStaff, setTotalStaff] = useState("");
   const [menuPrice, setMenuPrice] = useState("");
-  const [kitchenEarnings, setKitchenEarnings] = useState("");
-  const [tippedEarnings, setTippedEarnings] = useState("");
-
-  const [showResults, setShowResults] = useState(false);
+  const [waitstaff, setWaitstaff] = useState<RoleState>({ count: "", wage: "" });
+  const [cooks, setCooks] = useState<RoleState>({ count: "", wage: "" });
+  const [dishwashers, setDishwashers] = useState<RoleState>({ count: "", wage: "" });
+  const [results, setResults] = useState<CalcResults | null>(null);
+  const [snapshotMenuPrice, setSnapshotMenuPrice] = useState("");
 
   const stateData = useMemo(() => (state ? getStateData(state) : null), [state]);
   const profile = useMemo(
@@ -148,49 +175,65 @@ export default function App() {
     [restaurantType]
   );
 
+  // Pre-fill wages when state changes
+  useEffect(() => {
+    if (!stateData) return;
+    setWaitstaff((prev) => ({ ...prev, wage: String(stateData.tippedMinWage) }));
+    setCooks((prev) => ({ ...prev, wage: String(stateData.minimumWage) }));
+    setDishwashers((prev) => ({ ...prev, wage: String(stateData.minimumWage) }));
+  }, [stateData]);
+
   const staffingPreview = useMemo(() => {
-    const n = parseInt(totalStaff);
-    if (!profile || !n || isNaN(n)) return null;
-    return deriveStaffing(n, profile);
-  }, [totalStaff, profile]);
+    const wc = parseInt(waitstaff.count);
+    const cc = parseInt(cooks.count);
+    const dc = parseInt(dishwashers.count);
+    if (!profile || !wc || !cc || !dc) return null;
+    return deriveStaffing(wc, cc, dc, profile);
+  }, [waitstaff.count, cooks.count, dishwashers.count, profile]);
 
-  const results = useMemo<CalcResults | null>(() => {
-    if (!showResults || !stateData || !profile) return null;
-    const rev = parseFloat(annualRevenue);
-    const staff = parseInt(totalStaff);
+  const canCalculate =
+    state && restaurantType &&
+    parseFloat(annualRevenue.replace(/,/g, "")) > 0 &&
+    parseFloat(menuPrice) > 0 &&
+    parseInt(waitstaff.count) >= 1 && parseFloat(waitstaff.wage) > 0 &&
+    parseInt(cooks.count) >= 1 && parseFloat(cooks.wage) > 0 &&
+    parseInt(dishwashers.count) >= 1 && parseFloat(dishwashers.wage) > 0;
+
+  const handleCalculate = () => {
+    if (!stateData || !profile) return;
+    const rev = parseFloat(annualRevenue.replace(/,/g, ""));
     const price = parseFloat(menuPrice);
-    const kitchen = parseFloat(kitchenEarnings);
-    const tipped = parseFloat(tippedEarnings);
-    if (!rev || !staff || !price || !kitchen || !tipped) return null;
-
-    const inputs: FormInputs = {
-      state,
-      restaurantType,
-      annualRevenue: rev,
-      totalStaff: staff,
-      menuPrice: price,
-      kitchenStaffEarnings: kitchen,
-      tippedWorkerEarnings: tipped,
-    };
-
-    return calculate(inputs, profile, stateData.minimumWage, stateData.tippedMinWage, stateData.targetOFWWage);
-  }, [showResults, stateData, profile, annualRevenue, totalStaff, menuPrice, kitchenEarnings, tippedEarnings, state, restaurantType]);
-
-  const handleCalculate = useCallback(() => {
-    setShowResults(true);
-  }, []);
-
-  const canCalculate = state && restaurantType && annualRevenue && totalStaff && menuPrice && kitchenEarnings && tippedEarnings;
+    const wc = parseInt(waitstaff.count), ww = parseFloat(waitstaff.wage);
+    const cc = parseInt(cooks.count),     cw = parseFloat(cooks.wage);
+    const dc = parseInt(dishwashers.count), dw = parseFloat(dishwashers.wage);
+    if (isNaN(rev) || rev <= 0 || isNaN(price) || price <= 0 ||
+        isNaN(wc) || wc < 1 || isNaN(cc) || cc < 1 || isNaN(dc) || dc < 1 ||
+        isNaN(ww) || ww <= 0 || isNaN(cw) || cw <= 0 || isNaN(dw) || dw <= 0) return;
+    setSnapshotMenuPrice(menuPrice);
+    setResults(calculate(
+      { state, restaurantType, annualRevenue: rev, menuPrice: price,
+        waitstaff: { count: wc, wage: ww },
+        cooks: { count: cc, wage: cw },
+        dishwashers: { count: dc, wage: dw } },
+      profile,
+      stateData.minimumWage,
+      stateData.tippedMinWage,
+      stateData.targetOFWWage
+    ));
+  };
 
   const handleRestart = () => {
-    setShowResults(false);
-    setState(""); setRestaurantType(""); setAnnualRevenue(""); setTotalStaff("");
-    setMenuPrice(""); setKitchenEarnings(""); setTippedEarnings("");
+    setResults(null);
+    setSnapshotMenuPrice("");
+    setState(""); setRestaurantType(""); setAnnualRevenue(""); setMenuPrice("");
+    setWaitstaff({ count: "", wage: "" });
+    setCooks({ count: "", wage: "" });
+    setDishwashers({ count: "", wage: "" });
   };
 
   const handleDownloadPDF = () => {
     if (!results) return;
-    exportPDF({ results, state, restaurantType, annualRevenue: parseFloat(annualRevenue), menuPrice: parseFloat(menuPrice) });
+    exportPDF({ results, state, restaurantType, annualRevenue: parseFloat(annualRevenue.replace(/,/g, "")), menuPrice: parseFloat(menuPrice) });
   };
 
   return (
@@ -233,28 +276,41 @@ export default function App() {
             <div className="grid grid-cols-2 gap-4">
               <SelectField label="Restaurant Type" value={restaurantType} onChange={setRestaurantType}
                 options={RESTAURANT_TYPES_LIST} placeholder="Select type" />
-              <InputField label="Annual Revenue" value={annualRevenue} onChange={setAnnualRevenue} suffix="USD" />
+              <RevenueField label="Annual Revenue" value={annualRevenue} onChange={setAnnualRevenue} />
             </div>
+            {annualRevenue && parseFloat(annualRevenue.replace(/,/g, "")) > 20_000_000 && (
+              <p className="text-xs rounded-lg px-3 py-2 border" style={{ color: "#7a4a00", backgroundColor: "#fffbeb", borderColor: "#fcd34d" }}>
+                This revenue is unusually high for a single restaurant location — most full-service restaurants generate $500K–$5M annually. If you're modeling a chain or multiple locations, results may not reflect a typical single-location scenario.
+              </p>
+            )}
           </div>
         </section>
 
         {/* Section 2 */}
         <section className="mb-8">
           <div className="flex items-center gap-3 mb-5">
-            <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0" style={{ backgroundColor: "#3d1212" }}>2</div>
+            {/* Outline circle — same style as section 1 */}
+            <div className="w-9 h-9 rounded-full border-2 border-[#3d1212] flex items-center justify-center text-sm font-bold text-[#3d1212] shrink-0">2</div>
             <h2 className="text-xl font-bold text-[#3d1212]">Tell us about your team</h2>
           </div>
-          <div className="flex flex-col gap-4">
-            <div className="grid grid-cols-2 gap-4">
-              <SelectField label="Number of workers" value={totalStaff} onChange={setTotalStaff}
-                options={Array.from({ length: 200 }, (_, i) => ({ value: String(i + 1), label: String(i + 1) }))}
-                placeholder="Select type" />
-              <InputField label="Menu price" value={menuPrice} onChange={setMenuPrice} suffix="USD" />
+          <div className="flex flex-col gap-5">
+            {/* Staffing header row */}
+            <div>
+              <div className="grid grid-cols-[1fr_auto_auto] gap-3 mb-1 px-0">
+                <span className="text-sm font-medium text-[#3d1212]">Role</span>
+                <span className="text-sm font-medium text-[#3d1212] w-24 text-center">How many?</span>
+                <span className="text-sm font-medium text-[#3d1212] w-36 text-center">Current hourly pay</span>
+              </div>
+              <div className="flex flex-col gap-3 border border-[#e0c8c8] rounded-xl p-4 bg-white/50">
+                <StaffingRow role="Waitstaff" sub="FOH" value={waitstaff} onChange={setWaitstaff} />
+                <div className="border-t border-[#e0c8c8]" />
+                <StaffingRow role="Cooks" sub="BOH" value={cooks} onChange={setCooks} />
+                <div className="border-t border-[#e0c8c8]" />
+                <StaffingRow role="Dishwashers" sub="BOH" value={dishwashers} onChange={setDishwashers} />
+              </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <InputField label="Kitchen staff earnings" value={kitchenEarnings} onChange={setKitchenEarnings} />
-              <InputField label="Tipped workers earnings" value={tippedEarnings} onChange={setTippedEarnings} />
-            </div>
+
+            <InputField label="Average menu item price" value={menuPrice} onChange={setMenuPrice} suffix="USD" />
           </div>
         </section>
 
@@ -278,11 +334,19 @@ export default function App() {
               <AutoFillBadge value={stateData ? "$" + stateData.targetOFWWage : "—"} label="Target OFW wage" />
             </div>
             <p className="text-center text-xs text-[#7a4a4a]">Autofilled calculations based on your input</p>
+            {staffingPreview && annualRevenue && (() => {
+              const rev = parseFloat(annualRevenue.replace(/,/g, ""));
+              return !isNaN(rev) && rev > 0 && rev / staffingPreview.totalStaff < 30_000;
+            })() && (
+              <p className="mt-2 text-xs rounded-lg px-3 py-2 border text-center" style={{ color: "#7a4a00", backgroundColor: "#fffbeb", borderColor: "#fcd34d" }}>
+                Your revenue seems low for this many staff. Double-check your annual revenue.
+              </p>
+            )}
           </div>
         )}
 
         {/* Results */}
-        {showResults && results && (
+        {results && (
           <div className="space-y-5">
             {/* Hero result */}
             <div className="rounded-2xl p-6" style={{ backgroundColor: "#3d1212" }}>
@@ -291,7 +355,7 @@ export default function App() {
                 <div className="flex items-center justify-between border-b border-white/10 pb-4">
                   <span className="text-white/70 text-sm">To pay all workers</span>
                   <div className="flex items-baseline gap-1">
-                    <span className="text-white font-bold text-2xl">${results.toPayAllWorkersHourly}</span>
+                    <span className="text-white font-bold text-2xl">${results.targetOFWWage}</span>
                     <span className="text-white/60 text-sm">/hr</span>
                   </div>
                 </div>
@@ -301,25 +365,28 @@ export default function App() {
                     {fmtPct(results.requiredMenuIncreasePercent)}
                   </span>
                 </div>
+                {results.requiredMenuIncreasePercent === 0 && (
+                  <p className="text-xs text-white/50 mt-1">
+                    Your reported revenue already covers OFW wages at break-even — no price increase is needed to reach that threshold. Check that your annual revenue reflects a single location.
+                  </p>
+                )}
               </div>
 
-              {results.breakEven && (
-                <div className="mt-5 p-4 rounded-xl bg-white/10 text-sm text-white/80 leading-relaxed">
-                  Your{" "}
-                  <span className="font-semibold text-white">${fmt(parseFloat(menuPrice))}</span>{" "}
-                  plate becomes{" "}
-                  <span className="font-semibold text-white">${fmt(results.breakEven.newMenuPrice)}</span>
-                  {" "}— but your customer no longer tips. They currently pay{" "}
-                  <span className="font-semibold text-white">${fmt(results.breakEven.customerPaidBefore)}</span>{" "}
-                  with tip. They'd pay{" "}
-                  <span className="font-semibold text-white">${fmt(results.breakEven.customerPaysWithNewSystem)}</span>{" "}
-                  without. That's{" "}
-                  <span className={`font-semibold ${results.breakEven.customerDelta <= 0 ? "text-green-300" : "text-red-300"}`}>
-                    {fmtDollar(results.breakEven.customerDelta)}
-                  </span>{" "}
-                  {results.breakEven.customerDelta <= 0 ? "less" : "more"}.
-                </div>
-              )}
+              <div className="mt-5 p-4 rounded-xl bg-white/10 text-sm text-white/80 leading-relaxed">
+                Your{" "}
+                <span className="font-semibold text-white">${fmt(parseFloat(snapshotMenuPrice))}</span>{" "}
+                plate becomes{" "}
+                <span className="font-semibold text-white">${fmt(results.breakEven.newMenuPrice)}</span>
+                {" "}— but your customer no longer tips. They currently pay{" "}
+                <span className="font-semibold text-white">${fmt(results.breakEven.customerPaidBefore)}</span>{" "}
+                with tip. They'd pay{" "}
+                <span className="font-semibold text-white">${fmt(results.breakEven.customerPaysWithNewSystem)}</span>{" "}
+                without. That's{" "}
+                <span className={`font-semibold ${results.breakEven.customerDelta <= 0 ? "text-green-300" : "text-red-300"}`}>
+                  {fmtDollar(results.breakEven.customerDelta)}
+                </span>{" "}
+                {results.breakEven.customerDelta <= 0 ? "less" : "more"}.
+              </div>
             </div>
 
             {/* Three scenarios table */}
@@ -354,9 +421,9 @@ export default function App() {
                 {
                   label: "Monthly profit",
                   values: [
-                    results.breakEven.monthlyProfit >= 0 ? "$" + fmt(results.breakEven.monthlyProfit, 0) : "-$" + fmt(Math.abs(results.breakEven.monthlyProfit), 0),
-                    results.comfortable.monthlyProfit >= 0 ? "$" + fmt(results.comfortable.monthlyProfit, 0) : "-$" + fmt(Math.abs(results.comfortable.monthlyProfit), 0),
-                    results.matchCurrent.monthlyProfit >= 0 ? "$" + fmt(results.matchCurrent.monthlyProfit, 0) : "-$" + fmt(Math.abs(results.matchCurrent.monthlyProfit), 0),
+                    (results.breakEven.monthlyProfit < 0 ? "-$" : "$") + fmt(Math.abs(results.breakEven.monthlyProfit), 0),
+                    (results.comfortable.monthlyProfit < 0 ? "-$" : "$") + fmt(Math.abs(results.comfortable.monthlyProfit), 0),
+                    (results.matchCurrent.monthlyProfit < 0 ? "-$" : "$") + fmt(Math.abs(results.matchCurrent.monthlyProfit), 0),
                   ],
                   colors: [
                     results.breakEven.monthlyProfit >= 0 ? "#15803d" : "#dc2626",
