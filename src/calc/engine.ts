@@ -34,6 +34,17 @@ export interface ScenarioResult {
   monthlyProfit: number;
 }
 
+export interface CalcDiagnostics {
+  currentMonthlyPayroll: number;
+  ofwMonthlyPayroll: number;
+  payrollGapMonthly: number;
+  annualCOGS: number;
+  annualOpex: number;
+  currentMonthlyEBITDA: number;
+  ofwMonthlyEBITDANoIncrease: number;
+  grossMarginRate: number;
+}
+
 export interface CalcResults {
   toPayAllWorkersHourly: number;
   requiredMenuIncreasePercent: number;
@@ -45,6 +56,7 @@ export interface CalcResults {
   minimumWage: number;
   tippedMinWage: number;
   targetOFWWage: number;
+  diagnostics: CalcDiagnostics;
 }
 
 const PAYROLL_TAX_RATE = 0.0765;
@@ -91,17 +103,19 @@ function annualLaborCost(
   const mgmtAnnual = staffing.managementCount * profile.managementAnnualSalary;
   const turnoverCost = staffing.totalStaff * profile.annualTurnoverRate * profile.onboardingCostPerEmployee;
 
-  // Current
+  // Current — use each role's user-entered wage
   const curFOH  = fohRegHours * waitstaffWage   + fohOTHours  * waitstaffWage   * OT_MULTIPLIER;
   const curCook = cooksRegHours * cooksWage      + cooksOTHours * cooksWage      * OT_MULTIPLIER;
   const curDish = dishRegHours  * dishwashersWage + dishOTHours * dishwashersWage * OT_MULTIPLIER;
   const curBase = curFOH + curCook + curDish + mgmtAnnual;
   const current = curBase + (curFOH + curCook + curDish) * PAYROLL_TAX_RATE + turnoverCost;
 
-  // At target (everyone gets targetWage, no tips)
-  const tgtFOH  = fohRegHours  * targetWage + fohOTHours  * targetWage * OT_MULTIPLIER;
-  const tgtCook = cooksRegHours * targetWage + cooksOTHours * targetWage * OT_MULTIPLIER;
-  const tgtDish = dishRegHours  * targetWage + dishOTHours  * targetWage * OT_MULTIPLIER;
+  // OFW model — every non-management worker earns the state target wage
+  // Use Math.max so a worker already above target is not reduced
+  const effectiveTarget = Math.max(targetWage, 0);
+  const tgtFOH  = fohRegHours  * effectiveTarget + fohOTHours  * effectiveTarget * OT_MULTIPLIER;
+  const tgtCook = cooksRegHours * effectiveTarget + cooksOTHours * effectiveTarget * OT_MULTIPLIER;
+  const tgtDish = dishRegHours  * effectiveTarget + dishOTHours  * effectiveTarget * OT_MULTIPLIER;
   const tgtBase = tgtFOH + tgtCook + tgtDish + mgmtAnnual;
   const atTarget = tgtBase + (tgtFOH + tgtCook + tgtDish) * PAYROLL_TAX_RATE + turnoverCost;
 
@@ -167,20 +181,37 @@ export function calculate(
 
   const grossMarginRate = 1 - profile.cogsPercent;
 
+  // ── Break-even: zero-profit floor in OFW model (can legitimately be 0%)
   const breakEvenRevenue = (currentOpex + labor.atTarget) / grossMarginRate;
   const breakEvenPct = Math.max(0, ((breakEvenRevenue - currentRevenue) / currentRevenue) * 100);
 
+  // ── Comfortable: 5% net margin in OFW model
   const comfortableRevenue = (currentOpex + labor.atTarget) / (grossMarginRate - 0.05);
   const comfortablePct = Math.max(0, ((comfortableRevenue - currentRevenue) / currentRevenue) * 100);
 
+  // ── Match Current: maintain today's profit
   const matchRevenue = (currentOpex + labor.atTarget + currentAnnualProfit) / grossMarginRate;
   const matchPct = Math.max(0, ((matchRevenue - currentRevenue) / currentRevenue) * 100);
 
+  // ── Required hero number: the increase that covers the full payroll gap so
+  //    customers — not the owner — bear the wage increase.
+  //    Formula:  (OFW payroll − current payroll) / (revenue × gross margin rate)
+  //    This is algebraically identical to matchPct, but stays correct even when
+  //    matchPct would be rounded to 0 through floating-point noise.
+  const payrollGap = Math.max(0, labor.atTarget - labor.current);
+  const requiredMenuIncreasePercent =
+    grossMarginRate > 0 && currentRevenue > 0
+      ? (payrollGap / (grossMarginRate * currentRevenue)) * 100
+      : 0;
+
   const args = [inputs.menuPrice, profile.tipRatePercent, inputs.annualRevenue, profile, labor.atTarget] as const;
+
+  const ofwMonthlyEBITDANoIncrease =
+    (currentRevenue - currentCOGS - labor.atTarget - currentOpex) / MONTHS_PER_YEAR;
 
   return {
     toPayAllWorkersHourly: targetOFWWage,
-    requiredMenuIncreasePercent: breakEvenPct,
+    requiredMenuIncreasePercent,
     currentMonthlyProfit,
     breakEven:    buildScenario(breakEvenPct,  ...args),
     comfortable:  buildScenario(comfortablePct, ...args),
@@ -189,5 +220,15 @@ export function calculate(
     minimumWage,
     tippedMinWage,
     targetOFWWage,
+    diagnostics: {
+      currentMonthlyPayroll: labor.current / MONTHS_PER_YEAR,
+      ofwMonthlyPayroll:     labor.atTarget / MONTHS_PER_YEAR,
+      payrollGapMonthly:     (labor.atTarget - labor.current) / MONTHS_PER_YEAR,
+      annualCOGS:            currentCOGS,
+      annualOpex:            currentOpex,
+      currentMonthlyEBITDA:  currentMonthlyProfit,
+      ofwMonthlyEBITDANoIncrease,
+      grossMarginRate,
+    },
   };
 }

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { STATES_LIST, getStateData } from "./data/stateTiers";
 import {
   RESTAURANT_PROFILES,
@@ -156,6 +156,49 @@ function StaffingRow({
   );
 }
 
+// ── Info tooltip ──────────────────────────────────────────────────────────────
+
+function InfoTooltip({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative inline-flex items-center">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="text-white/60 hover:text-white/90 transition-colors leading-none select-none"
+        aria-label="More information"
+        style={{ fontSize: "18px" }}
+      >
+        ℹ️
+      </button>
+      {open && (
+        <div
+          className="absolute z-50 bottom-full mb-2 left-1/2 -translate-x-1/2 w-72 rounded-xl p-3 text-xs leading-relaxed shadow-xl"
+          style={{ backgroundColor: "#1a0a0a", color: "rgba(255,255,255,0.85)", border: "1px solid rgba(255,255,255,0.12)" }}
+        >
+          {text}
+          <div
+            className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent"
+            style={{ borderTopColor: "#1a0a0a" }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -168,6 +211,7 @@ export default function App() {
   const [dishwashers, setDishwashers] = useState<RoleState>({ count: "", wage: "" });
   const [results, setResults] = useState<CalcResults | null>(null);
   const [snapshotMenuPrice, setSnapshotMenuPrice] = useState("");
+  const [howItWorksOpen, setHowItWorksOpen] = useState(false);
 
   const stateData = useMemo(() => (state ? getStateData(state) : null), [state]);
   const profile = useMemo(
@@ -236,6 +280,8 @@ export default function App() {
     exportPDF({ results, state, restaurantType, annualRevenue: parseFloat(annualRevenue.replace(/,/g, "")), menuPrice: parseFloat(menuPrice) });
   };
 
+  const heroIncreaseExceedsLimit = results && results.requiredMenuIncreasePercent > 100;
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: "#fce8e8" }}>
       {/* Navbar */}
@@ -289,7 +335,6 @@ export default function App() {
         {/* Section 2 */}
         <section className="mb-8">
           <div className="flex items-center gap-3 mb-5">
-            {/* Outline circle — same style as section 1 */}
             <div className="w-9 h-9 rounded-full border-2 border-[#3d1212] flex items-center justify-center text-sm font-bold text-[#3d1212] shrink-0">2</div>
             <h2 className="text-xl font-bold text-[#3d1212]">Tell us about your team</h2>
           </div>
@@ -339,7 +384,7 @@ export default function App() {
               return !isNaN(rev) && rev > 0 && rev / staffingPreview.totalStaff < 30_000;
             })() && (
               <p className="mt-2 text-xs rounded-lg px-3 py-2 border text-center" style={{ color: "#7a4a00", backgroundColor: "#fffbeb", borderColor: "#fcd34d" }}>
-                Your revenue seems low for this many staff. Double-check your annual revenue.
+                Your revenue seems low relative to your team size. Please double-check your annual revenue.
               </p>
             )}
           </div>
@@ -348,45 +393,80 @@ export default function App() {
         {/* Results */}
         {results && (
           <div className="space-y-5">
+
+            {/* How does this calculator work? — collapsible */}
+            <div className="rounded-2xl overflow-hidden border border-[#e0c8c8] bg-white">
+              <button
+                onClick={() => setHowItWorksOpen((v) => !v)}
+                className="w-full flex items-center justify-between px-5 py-4 text-left"
+              >
+                <span className="text-base font-semibold text-[#3d1212]">How does this calculator work?</span>
+                <svg
+                  className={`shrink-0 transition-transform duration-200 ${howItWorksOpen ? "rotate-180" : ""}`}
+                  width="16" height="16" viewBox="0 0 12 8" fill="none"
+                >
+                  <path d="M1 1l5 5 5-5" stroke="#3d1212" strokeWidth="1.5" strokeLinecap="round"/>
+                </svg>
+              </button>
+              {howItWorksOpen && (
+                <div className="px-5 pb-5 text-sm text-[#5a2a2a] leading-relaxed border-t border-[#e0c8c8]" style={{ paddingTop: "16px" }}>
+                  This calculator compares your current restaurant costs (including what your customers pay in tips) against a model where all workers earn a fair base wage and tipping is eliminated. The menu price increase shown is what's needed to cover the higher base wages, offset by savings from reduced employee turnover. Your customer's total cost (meal + tip today vs. higher menu price + no tip) is compared so you can see the real impact.
+                </div>
+              )}
+            </div>
+
             {/* Hero result */}
             <div className="rounded-2xl p-6" style={{ backgroundColor: "#3d1212" }}>
-              <h3 className="text-white font-semibold mb-5">Your result</h3>
+              <h3 className="text-white font-semibold mb-5 text-lg">Your result</h3>
               <div className="space-y-4">
                 <div className="flex items-center justify-between border-b border-white/10 pb-4">
-                  <span className="text-white/70 text-sm">To pay all workers</span>
+                  <span className="text-white/70 text-base">To pay all workers</span>
                   <div className="flex items-baseline gap-1">
-                    <span className="text-white font-bold text-2xl">${results.targetOFWWage}</span>
-                    <span className="text-white/60 text-sm">/hr</span>
+                    <span className="text-white font-bold text-3xl">${results.targetOFWWage}</span>
+                    <span className="text-white/60 text-base">/hr</span>
                   </div>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-white/70 text-sm">You need to increase menu prices by</span>
-                  <span className="text-3xl font-bold" style={{ color: "#f87171" }}>
-                    {fmtPct(results.requiredMenuIncreasePercent)}
-                  </span>
-                </div>
-                {results.requiredMenuIncreasePercent === 0 && (
-                  <p className="text-xs text-white/50 mt-1">
+
+                {heroIncreaseExceedsLimit ? (
+                  <div className="rounded-xl p-4 text-sm leading-relaxed" style={{ backgroundColor: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.85)" }}>
+                    Based on your current revenue and staffing, the transition to ${results.targetOFWWage}/hr requires changes beyond menu pricing alone. Consider adjusting staffing levels, increasing revenue, or phasing in wage increases over time.
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <span className="text-white/70 text-base">You need to increase menu prices by</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold" style={{ color: "#f87171", fontSize: "36px" }}>
+                        {fmtPct(results.requiredMenuIncreasePercent)}
+                      </span>
+                      <InfoTooltip text="This calculator estimates the menu price increase needed to pay all workers a fair base wage while eliminating tipping. It accounts for your current labor costs, food costs, rent, and operating expenses based on your restaurant type." />
+                    </div>
+                  </div>
+                )}
+
+                {!heroIncreaseExceedsLimit && results.requiredMenuIncreasePercent === 0 && (
+                  <p className="text-sm text-white/50 mt-1">
                     Your reported revenue already covers OFW wages at break-even — no price increase is needed to reach that threshold. Check that your annual revenue reflects a single location.
                   </p>
                 )}
               </div>
 
-              <div className="mt-5 p-4 rounded-xl bg-white/10 text-sm text-white/80 leading-relaxed">
-                Your{" "}
-                <span className="font-semibold text-white">${fmt(parseFloat(snapshotMenuPrice))}</span>{" "}
-                plate becomes{" "}
-                <span className="font-semibold text-white">${fmt(results.breakEven.newMenuPrice)}</span>
-                {" "}— but your customer no longer tips. They currently pay{" "}
-                <span className="font-semibold text-white">${fmt(results.breakEven.customerPaidBefore)}</span>{" "}
-                with tip. They'd pay{" "}
-                <span className="font-semibold text-white">${fmt(results.breakEven.customerPaysWithNewSystem)}</span>{" "}
-                without. That's{" "}
-                <span className={`font-semibold ${results.breakEven.customerDelta <= 0 ? "text-green-300" : "text-red-300"}`}>
-                  {fmtDollar(results.breakEven.customerDelta)}
-                </span>{" "}
-                {results.breakEven.customerDelta <= 0 ? "less" : "more"}.
-              </div>
+              {!heroIncreaseExceedsLimit && (
+                <div className="mt-5 p-4 rounded-xl bg-white/10 text-base text-white/80 leading-relaxed">
+                  Your{" "}
+                  <span className="font-semibold text-white">${fmt(parseFloat(snapshotMenuPrice))}</span>{" "}
+                  plate becomes{" "}
+                  <span className="font-semibold text-white">${fmt(results.breakEven.newMenuPrice)}</span>
+                  {" "}— but your customer no longer tips. They currently pay{" "}
+                  <span className="font-semibold text-white">${fmt(results.breakEven.customerPaidBefore)}</span>{" "}
+                  with tip. They'd pay{" "}
+                  <span className="font-semibold text-white">${fmt(results.breakEven.customerPaysWithNewSystem)}</span>{" "}
+                  without. That's{" "}
+                  <span className={`font-semibold ${results.breakEven.customerDelta <= 0 ? "text-green-300" : "text-red-300"}`}>
+                    {fmtDollar(results.breakEven.customerDelta)}
+                  </span>{" "}
+                  {results.breakEven.customerDelta <= 0 ? "less" : "more"}.
+                </div>
+              )}
             </div>
 
             {/* Three scenarios table */}
@@ -394,7 +474,7 @@ export default function App() {
               <div className="grid grid-cols-4 gap-2 mb-3 items-end">
                 <div />
                 {["Break-Even", "Comfortable", "Match Current"].map((t) => (
-                  <div key={t} className="text-center text-xs font-semibold text-[#3d1212]">{t}</div>
+                  <div key={t} className="text-center text-base font-semibold text-[#3d1212]">{t}</div>
                 ))}
               </div>
 
@@ -432,12 +512,12 @@ export default function App() {
                   ],
                 },
               ].map((row, ri) => (
-                <div key={ri} className="grid grid-cols-4 gap-2 py-2 border-t border-gray-100 items-center">
-                  <span className="text-xs text-[#5a2a2a]">{row.label}</span>
+                <div key={ri} className="grid grid-cols-4 gap-2 py-2.5 border-t border-gray-100 items-center">
+                  <span className="text-base text-[#5a2a2a]">{row.label}</span>
                   {row.values.map((v, i) => {
                     const c = row.colors ? row.colors[i] : row.color!;
                     return (
-                      <div key={i} className="text-center rounded-lg py-1.5 px-2 text-xs font-semibold" style={{ backgroundColor: c + "22", color: c }}>
+                      <div key={i} className="text-center rounded-lg py-2 px-2 text-base font-semibold" style={{ backgroundColor: c + "22", color: c }}>
                         {v}
                       </div>
                     );
